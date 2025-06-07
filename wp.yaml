@@ -1,0 +1,93 @@
+### wp ###
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: wp-sc
+provisioner: efs.csi.aws.com
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wp-efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: wp-sc
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: fs-0b4115f0413669a96::fsap-08499189ba31d1961
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-efs-pvc
+spec:
+  accessModes: 
+   - ReadWriteMany
+  storageClassName: wp-sc
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wp-app
+spec:
+  selector:
+    matchLabels:
+      app: wp
+      tier: frontend 
+  template:
+    metadata:
+      labels:
+        app: wp
+        tier: frontend
+    spec:
+      containers:
+        - name: wordpress
+          image: wordpress:php7.4-apache
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: mysql-svc
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-password
+                  key: password
+          ports:
+            - containerPort: 80
+              name: wordpress
+          volumeMounts:
+            - name: wordpress-storage
+              mountPath: /var/www/html
+      volumes:
+        - name: wordpress-storage
+          persistentVolumeClaim:
+            claimName: wp-efs-pvc
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: wp-svc
+spec:
+  selector:
+    app: wp
+    tier: frontend
+  ports:
+    - port: 80
+  type: LoadBalancer
